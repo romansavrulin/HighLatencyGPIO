@@ -92,6 +92,12 @@ GPIO::GPIO(unsigned short id, Edge edge, std::function<void(Value)> isr):
 
    _pollThread = std::thread(&GPIO::pollLoop, this);
 
+#ifdef GPIO_HIGH_PRIORITY_THREADS
+    struct sched_param sp = { .sched_priority = sched_get_priority_max(SCHED_FIFO) - 9 };
+    pthread_setschedparam(_isrThread.native_handle(), SCHED_FIFO, &sp);
+    pthread_setschedparam(_pollThread.native_handle(), SCHED_FIFO, &sp);
+#endif
+
    sched_yield();
 }
 

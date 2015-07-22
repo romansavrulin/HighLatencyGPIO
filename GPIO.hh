@@ -54,7 +54,7 @@ public:
    /// @enum Direction
    /// @brief Type used to configure a GPIO as an input or output
    //-----------------------------------------------------------------------------------------------
-   enum class Direction : char {
+   enum Direction {
       IN,
       OUT
    };
@@ -63,7 +63,7 @@ public:
    /// @enum Value
    /// @brief Type used to indicate the logic level of a GPIO
    //-----------------------------------------------------------------------------------------------
-   enum class Value : char {
+   enum Value {
       HIGH,
       LOW
    };
@@ -73,7 +73,7 @@ public:
    /// @brief Type used to indicate which logic level transitions on an input GPIO should result in
    ///        a call to the user-provided callback function.
    //-----------------------------------------------------------------------------------------------
-   enum class Edge : char {
+   enum Edge {
       NONE,
       RISING,
       FALLING,
@@ -135,7 +135,7 @@ public:
    /// @return None
    ///
    //-----------------------------------------------------------------------------------------------
-   void setValue(const Value value) const;
+   void  setValue(const Value value) const;
 
 
    //-----------------------------------------------------------------------------------------------

@@ -21,7 +21,7 @@ public:
    {
       const high_resolution_clock::time_point end = high_resolution_clock::now();
 
-      const auto time_span = end - beg;
+      const auto time_span = duration_cast<microseconds>(end - beg);
       accum += time_span;
       std::cout << "Latency: " << time_span.count() << " microseconds" << std::endl;
    }
@@ -54,11 +54,11 @@ int main()
       std::bind(&Handler::handle, &h, std::placeholders::_1);
 
    {
-      // Short GPIO 15 (input) to GPIO 60 (output) for the following latency test
-      GPIO gpio1(60, GPIO::OUT);
-      GPIO gpio2(15, GPIO::RISING, handleisr); // will be destroyed first,
-                                               // so no spurious call to handleisr upon
-                                               // destruction of GPIO60
+      // Short GPIO 15 (input) to GPIO 27 (output) for the following latency test
+      GPIO gpio1(27, GPIO::Direction::OUT);
+      GPIO gpio2(15, GPIO::Edge::RISING, handleisr); // will be destroyed first,
+                                                     // so no spurious call to handleisr upon
+                                                     // destruction of GPIO 27
 
       usleep(125000);
 

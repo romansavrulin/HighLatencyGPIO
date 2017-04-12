@@ -93,6 +93,11 @@ GPIO::GPIO(unsigned short id, Edge edge, std::function<void(Value)> isr):
 
    _pollThread = std::thread(&GPIO::pollLoop, this);
 
+   // Trying to set high priority real time threads for better performance
+   struct sched_param sp = { .sched_priority = sched_get_priority_max(SCHED_FIFO)/2 };
+   pthread_setschedparam(_isrThread.native_handle(), SCHED_RR, &sp);
+   pthread_setschedparam(_pollThread.native_handle(), SCHED_RR, &sp);
+
    sched_yield();
 }
 
@@ -261,7 +266,7 @@ void GPIO::pollLoop()
    memset((void*)fdset, 0, sizeof(fdset));
 
    fdset[0].fd     = _pollFD;
-   fdset[0].events = POLLPRI;
+   fdset[0].events = POLLPRI | POLLERR;
 
    fdset[1].fd     = _pipeFD[0]; // This is the FD for the read end of the pipe
    fdset[1].events = POLLRDHUP; // Monitor for closed connection

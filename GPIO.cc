@@ -94,7 +94,7 @@ GPIO::GPIO(unsigned short id, Edge edge, std::function<void(Value)> isr):
    _pollThread = std::thread(&GPIO::pollLoop, this);
 
    // Trying to set high priority real time threads for better performance
-   struct sched_param sp = { .sched_priority = sched_get_priority_max(SCHED_RR) };
+   struct sched_param sp = { .sched_priority = 50 };
    pthread_setschedparam(_isrThread.native_handle(), SCHED_RR, &sp);
    pthread_setschedparam(_pollThread.native_handle(), SCHED_RR, &sp);
 

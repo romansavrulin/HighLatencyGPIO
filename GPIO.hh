@@ -150,12 +150,17 @@ public:
    Value getValue() const;
 
 
-private:
-   void initCommon() const;
+protected:
+   void initCommon();
    void pollLoop();
    void isrLoop();
 
-private:
+protected:
+
+   std::string _direction_file;
+   std::string _value_file;
+   std::string _active_low_file;
+
    static const std::string  _sysfsPath;
 
    const unsigned short _id;
@@ -172,6 +177,10 @@ private:
 
    std::atomic<bool> _destructing;
    int               _pipeFD[2];
+
+   static constexpr int _default_ownership_wait_timeout = 100;
+   static constexpr const char* _default_ownership_user = "root";
+   static constexpr const char* _default_ownership_group = "gpio";
 
 #ifdef LOCKFREE
    boost::lockfree::spsc_queue<Value, boost::lockfree::capacity<64>> _spsc_queue;

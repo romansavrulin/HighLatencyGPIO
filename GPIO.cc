@@ -121,10 +121,11 @@ static void waitOwner(std::string fn, uint32_t timeout_ms, std::string user, std
 
 			if(pw && pw->pw_name){
 
-				printf("Waiting User: %s on %s . now %s\n", user.c_str(), fn.c_str(), pw->pw_name);
 				if(user == std::string(pw->pw_name)){
 					userMatch = true;
-				}
+					printf("User: %s appeared on %s\n", user.c_str(), fn.c_str());
+				}else
+					printf("Waiting User: %s on %s . now %s\n", user.c_str(), fn.c_str(), pw->pw_name);
 			}
 		}else
 			userMatch = true;
@@ -134,10 +135,11 @@ static void waitOwner(std::string fn, uint32_t timeout_ms, std::string user, std
 
 			if(gr && gr->gr_name){
 
-				printf("Waiting Group: %s on %s . now %s\n", group.c_str(), fn.c_str(), gr->gr_name);
 				if(group == std::string(gr->gr_name)){
 					groupMatch = true;
-				}
+					printf("Group: %s appeared on %s\n", group.c_str(), fn.c_str());
+				}else
+					printf("Waiting Group: %s on %s . now %s\n", group.c_str(), fn.c_str(), gr->gr_name);
 			}
 		}else
 			groupMatch = true;

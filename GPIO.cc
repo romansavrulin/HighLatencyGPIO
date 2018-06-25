@@ -212,21 +212,6 @@ void GPIO::initCommon()
       }
    }
 
-
-
-   // validate not already exported
-   {
-      // In decreasing order of speed: stat() -> access() -> fopen() -> ifstream
-      struct stat stat_buf;
-      const std::string path(_sysfsPath + "gpio" + _id_str);
-      if( stat(path.c_str() , &stat_buf) == 0 )
-      {
-         throw std::runtime_error(
-            "GPIO " + _id_str + " already exported." +
-            "(Some other GPIO object already owns this GPIO)");
-      }
-   }
-
    // attempt to export
    {
       std::ofstream sysfs_export(_sysfsPath + "export", std::ofstream::app);

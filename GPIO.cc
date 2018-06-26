@@ -39,6 +39,7 @@ SOFTWARE.
 #include <grp.h>
 
 #include <iostream>
+#include <fstream>
 using std::cerr;
 using std::endl;
 
@@ -105,7 +106,7 @@ GPIO::GPIO(unsigned short id, Edge edge, std::function<void(Value)> isr):
    sched_yield();
 }
 
-static void waitOwner(std::string fn, uint32_t timeout_ms, std::string user, std::string group){
+static std::fstream waitOpen(std::string fn, uint32_t timeout_ms, std::string user, std::string group){
 	struct stat sb;
 	char outstr[200];
 
@@ -145,23 +146,26 @@ static void waitOwner(std::string fn, uint32_t timeout_ms, std::string user, std
 			groupMatch = true;
 
 		if(groupMatch && userMatch){
-			sync();		//commit permission change
-			return;
+			auto fs = std::fstream (fn, std::ofstream::app);
+			if(fs.is_open()){
+				sync();		//commit permission change
+				return fs;
+			}
 		}
 
 		usleep(1000);
 	}while(timeout_ms--);
 
-	throw std::runtime_error("timeout waiting for ownership " + user + ":" + group + " on " + fn + " file\n");
+	if(!groupMatch || !userMatch)
+		throw std::runtime_error("timeout waiting for ownership " + user + ":" + group + " on " + fn + " file\n");
+
+	throw std::runtime_error("Timeout opening " + fn + " file\n");
 }
 
 
 void GPIO::initCommon()
 {
    //validate id #
-	_direction_file = _sysfsPath + "gpio" + _id_str + "/direction";
-	_value_file = _sysfsPath + "gpio" + _id_str + "/value";
-	_active_low_file = _sysfsPath + "gpio" + _id_str + "/active_low";
 
    {
       if( !boost::filesystem::exists(_sysfsPath) )
@@ -225,12 +229,18 @@ void GPIO::initCommon()
       sysfs_export.close();
    }
 
+   sysfs_direction = waitOpen(_sysfsPath + "gpio" + _id_str + "/direction", _default_ownership_wait_timeout, _default_ownership_user, _default_ownership_group);
+
+   _value_filename = _sysfsPath + "gpio" + _id_str + "/value";
+   sysfs_value = waitOpen(_value_filename, _default_ownership_wait_timeout, _default_ownership_user, _default_ownership_group);
+
+
+   sysfs_activelow =  waitOpen(_sysfsPath + "gpio" + _id_str + "/active_low", _default_ownership_wait_timeout, _default_ownership_user, _default_ownership_group);
+
 
    //attempt to set direction
    {
-	  waitOwner(_direction_file, _default_ownership_wait_timeout, _default_ownership_user, _default_ownership_group);
-      std::ofstream sysfs_direction(
-         _direction_file, std::ofstream::app);
+
       if( !sysfs_direction.is_open() )
       {
          throw std::runtime_error("Unable to set direction for GPIO " + _id_str);
@@ -244,8 +254,6 @@ void GPIO::initCommon()
 
    //attempt to clear active low
    {
-	  waitOwner(_active_low_file, _default_ownership_wait_timeout, _default_ownership_user, _default_ownership_group);
-      std::ofstream sysfs_activelow(_active_low_file, std::ofstream::app);
       if( !sysfs_activelow.is_open() )
       {
          throw std::runtime_error("Unable to clear active_low for GPIO " + _id_str);
@@ -260,8 +268,6 @@ void GPIO::initCommon()
    {
       if( _direction == GPIO::OUT )
       {
-    	 waitOwner(_value_file, _default_ownership_wait_timeout, _default_ownership_user, _default_ownership_group);
-         std::ofstream sysfs_value(_value_file, std::ofstream::app);
          if( !sysfs_value.is_open() )
          {
             throw std::runtime_error("Unable to initialize value for GPIO " + _id_str);
@@ -277,7 +283,7 @@ void GPIO::pollLoop()
 {
    // No easy way to get file descriptor from ifstream... ugh.
    {
-      const std::string path(_value_file);
+      const std::string path(_value_filename);
       _pollFD = open(path.c_str(), O_RDONLY | O_NONBLOCK); // closed in destructor
       if( _pollFD < 0 )
       {
@@ -439,6 +445,8 @@ void GPIO::isrLoop()
 
 GPIO::~GPIO()
 {
+
+	std::cout << "destructing GPIO " <<  _id << std::endl;
    // Set this flag to true in order to indicate to _isrThread that it needs to terminate
    _destructing = true;
 #ifndef LOCKFREE
@@ -478,6 +486,7 @@ GPIO::~GPIO()
       cerr << "Exception caught in destructor for GPIO " << _id_str << endl;
       cerr << boost::current_exception_diagnostic_information() << endl;
    }
+   std::cout << "destructing GPIO " <<  _id << " done" << std::endl;
 }
 
 
@@ -488,7 +497,7 @@ void GPIO::setValue(const Value value) const
       throw std::runtime_error("Cannot set value on an input GPIO");
    }
 
-   std::ofstream sysfs_value(_value_file, std::ofstream::app);
+   std::ofstream sysfs_value(_value_filename, std::ofstream::app);
    if( !sysfs_value.is_open() )
    {
       throw std::runtime_error("Unable to set value for GPIO " + _id_str);
@@ -502,7 +511,7 @@ void GPIO::setValue(const Value value) const
 
 GPIO::Value GPIO::getValue() const
 {
-   std::ifstream sysfs_value(_value_file);
+   std::ifstream sysfs_value(_value_filename);
    if( !sysfs_value.is_open() )
    {
       throw std::runtime_error("Unable to get value for GPIO " + _id_str);

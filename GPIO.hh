@@ -31,6 +31,7 @@ SOFTWARE.
 #include <functional>
 #include <string>
 #include <thread>
+#include <fstream>
 
 // LOCKFREE define specifies the use of a (single producer, single consumer) lockfree container for
 // the transfer of transition events from the thread which detects these events, to the thread which
@@ -157,9 +158,11 @@ protected:
 
 protected:
 
-   std::string _direction_file;
-   std::string _value_file;
-   std::string _active_low_file;
+   std::string _value_filename;
+
+   std::fstream sysfs_direction;
+   std::fstream sysfs_value;
+   std::fstream sysfs_activelow;
 
    static const std::string  _sysfsPath;
 

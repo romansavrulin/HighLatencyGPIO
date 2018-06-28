@@ -17,6 +17,11 @@ ifeq ($(ARCH), armv7l)
    LDFLAGS  += -march=armv7-a -mtune=cortex-a8 -mfloat-abi=hard -mfpu=neon
 endif
 
+ifneq ($(SYSROOT),)
+   CXXFLAGS += --sysroot=$(SYSROOT)
+   LDFLAGS += --sysroot=$(SYSROOT)
+endif
+
 lockfree : CXXFLAGS += -DLOCKFREE
 
 all: $(SOURCES) $(EXECUTABLE)

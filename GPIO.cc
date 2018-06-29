@@ -339,25 +339,22 @@ void GPIO::pollLoop()
          // error below, want to make the argument that the code is necessary, or can provide said
          // code. :) This also applies to the read() in the loop below.
          if( nbytes < 0 ) perror("read1");
-         throw std::runtime_error("GPIO " + _id_str + " read1() badness...");
+			 throw std::runtime_error("GPIO " + _id_str + " read1() badness...");
+
+         if     ( buf[0] == '0' )   _value = GPIO::LOW;
+         else if( buf[0] == '1' )   _value = GPIO::HIGH;
+         else throw std::runtime_error("GPIO " + _id_str + " read1() invalid value...");
       }
    }
 
    while( !_destructing )
    {
-	   static bool firstDummyRead = true;
-      int rc;
-
-      if (!firstDummyRead)
-    	  rc = poll(fdset, 2, -1);
-      else
-    	  rc = 1;
-
-      if( rc == 1 )
+      const int rc = poll(fdset, 2, -1);
+          if( rc == 1 )
       {
-         if((fdset[0].revents & POLLPRI) || firstDummyRead)
+         if((fdset[0].revents & POLLPRI))
          {
-        	 firstDummyRead = false;
+
             /// Consume the new value
         	lseek(fdset[0].fd, 0, SEEK_SET);
             const ssize_t nbytes = read(fdset[0].fd, buf, MAX_BUF);
@@ -369,7 +366,7 @@ void GPIO::pollLoop()
                throw std::runtime_error("GPIO " + _id_str + " read2() badness...");
             }
 
-            std::cout << "Poll Read " << buf[0] << endl;
+            std::cout << "Poll Read " << buf[0] << " on " << _id << endl;
 
             if     ( buf[0] == '0' )   _value = GPIO::LOW;
             else if( buf[0] == '1' )   _value = GPIO::HIGH;

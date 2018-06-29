@@ -85,9 +85,10 @@ GPIO::GPIO(unsigned short id, Edge edge, std::function<void(Value)> isr):
             "Are you sure this GPIO can be configured for interrupts?");
       }
       if     ( _edge == GPIO::NONE )    sysfs_edge << "none";
-      else if( _edge == GPIO::RISING )  sysfs_edge << "rising";
-      else if( _edge == GPIO::FALLING ) sysfs_edge << "falling";
-      else if( _edge == GPIO::BOTH )    sysfs_edge << "both";
+      else {
+    	  sysfs_edge << "both";	//if there's an edge file, use both for value update.
+    	  sysfs_value.close();
+      }
       sysfs_edge.close();
    }
 
@@ -108,7 +109,6 @@ GPIO::GPIO(unsigned short id, Edge edge, std::function<void(Value)> isr):
 
 static std::fstream waitOpen(std::string fn, uint32_t timeout_ms, std::string user, std::string group){
 	struct stat sb;
-	char outstr[200];
 
 	bool userMatch = false,
 		 groupMatch = false;
@@ -146,7 +146,7 @@ static std::fstream waitOpen(std::string fn, uint32_t timeout_ms, std::string us
 			groupMatch = true;
 
 		if(groupMatch && userMatch){
-			auto fs = std::fstream (fn, std::ofstream::app);
+			auto fs = std::fstream (fn);//, std::ofstream::app);
 			if(fs.is_open()){
 				sync();		//commit permission change
 				return fs;
@@ -273,7 +273,6 @@ void GPIO::initCommon()
             throw std::runtime_error("Unable to initialize value for GPIO " + _id_str);
          }
          sysfs_value << "0";
-         sysfs_value.close();
       }
    }
 }
@@ -342,13 +341,21 @@ void GPIO::pollLoop()
 
    while( !_destructing )
    {
-      const int rc = poll(fdset, 2, -1);
+	   static bool firstDummyRead = true;
+      int rc;
+
+      if (!firstDummyRead)
+    	  rc = poll(fdset, 2, -1);
+      else
+    	  rc = 1;
+
       if( rc == 1 )
       {
-         if(fdset[0].revents & POLLPRI)
+         if((fdset[0].revents & POLLPRI) || firstDummyRead)
          {
+        	 firstDummyRead = false;
             /// Consume the new value
-            lseek(fdset[0].fd, 0, SEEK_SET);
+        	lseek(fdset[0].fd, 0, SEEK_SET);
             const ssize_t nbytes = read(fdset[0].fd, buf, MAX_BUF);
             if( nbytes != MAX_BUF ) // See comment above
             {
@@ -358,10 +365,10 @@ void GPIO::pollLoop()
                throw std::runtime_error("GPIO " + _id_str + " read2() badness...");
             }
 
+            std::cout << "Poll Read " << buf[0] << endl;
 
-            Value val;
-            if     ( buf[0] == '0' )   val = GPIO::LOW;
-            else if( buf[0] == '1' )   val = GPIO::HIGH;
+            if     ( buf[0] == '0' )   _value = GPIO::LOW;
+            else if( buf[0] == '1' )   _value = GPIO::HIGH;
             else throw std::runtime_error("Invalid value read from GPIO " + _id_str + ": " + buf[0]);
 
    #ifdef LOCKFREE
@@ -370,7 +377,7 @@ void GPIO::pollLoop()
    #else
             {
                std::lock_guard<std::mutex> lck(_eventMutex);
-               _eventQueue.push(val);
+               _eventQueue.push(_value);
                _eventCV.notify_one();
             }
    #endif
@@ -433,11 +440,11 @@ void GPIO::isrLoop()
       lck.unlock();
 #endif
 
-      /// *************************************************************
-      /// If this (user) function causes an exception to be thrown,
-      /// it will not be handled or ignored!!!
-      /// *************************************************************
-      _isr(val);
+      try{
+    	  _isr(val);
+      }catch(...){
+    	  cerr << "exception in user function";
+      }
    }
 }
 
@@ -490,43 +497,55 @@ GPIO::~GPIO()
 }
 
 
-void GPIO::setValue(const Value value) const
+void GPIO::setValue(const Value value)
 {
    if( _direction == GPIO::IN )
    {
       throw std::runtime_error("Cannot set value on an input GPIO");
    }
 
-   std::ofstream sysfs_value(_value_filename, std::ofstream::app);
    if( !sysfs_value.is_open() )
    {
       throw std::runtime_error("Unable to set value for GPIO " + _id_str);
    }
 
-   if     ( value == GPIO::HIGH )  sysfs_value << "1";
-   else if( value == GPIO::LOW )   sysfs_value << "0";
-   sysfs_value.close();
+
+   sysfs_value.seekg(0);
+
+   if     ( value == GPIO::HIGH )  sysfs_value << "1" << std::endl;
+   else if( value == GPIO::LOW )   sysfs_value << "0" << std::endl;
+   sysfs_value.sync();
+   _value = value;
 }
 
 
-GPIO::Value GPIO::getValue() const
+GPIO::Value GPIO::getValue()
 {
-   std::ifstream sysfs_value(_value_filename);
+	if(_edge != GPIO::Edge::NONE){
+		return _value; //for interrupt-triggered input get value from accumulator
+	}
+
+	if(_direction == GPIO::Direction::OUT)
+		return _value; //for output get value from accumulator //TODO: this can cause non-consistent read if any other process triggers value from outside
+
+	//for in and non-interrupt triggered read sysfs
    if( !sysfs_value.is_open() )
    {
       throw std::runtime_error("Unable to get value for GPIO " + _id_str);
    }
 
+   sysfs_value.seekg(0);
+
    const char value = sysfs_value.get();
-   if( !sysfs_value.good() )
+   if( sysfs_value.fail() || sysfs_value.bad() )
    {
-      throw std::runtime_error("Unable to get value for GPIO " + _id_str);
+      throw std::runtime_error("Unable to get good value for GPIO " + _id_str + " RDState bad: " + std::to_string(sysfs_value.bad()) + " fail: " + std::to_string(sysfs_value.fail()));
    }
 
-   Value val;
-   if     ( value == '0' ) val = GPIO::LOW;
-   else if( value == '1' ) val = GPIO::HIGH;
-   else throw std::runtime_error("Invalid value read from GPIO " + _id_str + ": " + value);
+   if     ( value == '0' )
+	   return GPIO::LOW;
+   else if( value == '1' )
+	   return GPIO::HIGH;
 
-   return(val);
+   throw std::runtime_error("Invalid value read from GPIO " + _id_str + ": " + value);
 }

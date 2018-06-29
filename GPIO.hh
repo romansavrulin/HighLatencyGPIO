@@ -65,8 +65,8 @@ public:
    /// @brief Type used to indicate the logic level of a GPIO
    //-----------------------------------------------------------------------------------------------
    enum Value {
-      HIGH,
-      LOW
+      LOW,
+      HIGH
    };
 
    //-----------------------------------------------------------------------------------------------
@@ -137,7 +137,7 @@ public:
    /// @return None
    ///
    //-----------------------------------------------------------------------------------------------
-   void  setValue(const Value value) const;
+   void  setValue(const Value value);
 
 
    //-----------------------------------------------------------------------------------------------
@@ -148,7 +148,7 @@ public:
    /// @return The logical value of the GPIO.
    ///
    //-----------------------------------------------------------------------------------------------
-   Value getValue() const;
+   Value getValue();
 
 
 protected:
@@ -163,6 +163,8 @@ protected:
    std::fstream sysfs_direction;
    std::fstream sysfs_value;
    std::fstream sysfs_activelow;
+
+   Value _value;
 
    static const std::string  _sysfsPath;
 
@@ -181,7 +183,7 @@ protected:
    std::atomic<bool> _destructing;
    int               _pipeFD[2];
 
-   static constexpr int _default_ownership_wait_timeout = 100;
+   static constexpr int _default_ownership_wait_timeout = 500;
    static constexpr const char* _default_ownership_user = "root";
    static constexpr const char* _default_ownership_group = "gpio";
 

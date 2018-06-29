@@ -40,7 +40,7 @@ public:
 
 
    	if(_value != v){
-   		cout << "Timeout waiting " << v << "on " << _g.id() << endl;
+   		cout << "Timeout waiting " << v << " on " << _g.id() << endl;
    		throw std::runtime_error("Timeout waiting " + std::to_string(v));
    	}else
    		cout << "WaitValueISR " << _g.id() << " Got: " << v << endl;
@@ -94,7 +94,7 @@ int main()
          h.startTimeout();
          h2.startTimeout();
          h.waitValueISR(GPIO::HIGH);
-         h2.waitValueISR(GPIO::LOW);
+         //h2.waitValueISR(GPIO::LOW);
          //h3.waitValueISR(GPIO::LOW);
          //waitValuePoll(gpio1, gpio2);
          //usleep(3125000);

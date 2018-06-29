@@ -32,8 +32,8 @@ public:
    }
 
    void waitValueISR(GPIO::Value v){
-   	auto timeout = 100;//00000;
-   	while(_value != v && timeout--){
+   	auto timeout_us = high_resolution_clock::now() + std::chrono::microseconds(1000000);
+   	while(_value != v && timeout_us > high_resolution_clock::now()){
    		//cout << "_v: " << h._value << "; v: " << v << endl;
    		usleep(10000);
    	}
@@ -71,6 +71,7 @@ int main()
       GPIO gpio1(395, GPIO::Direction::OUT);
       Handler h(391);
       Handler h2(396);
+      Handler h3(397);
 
       usleep(125000);
 
@@ -94,6 +95,7 @@ int main()
          h2.startTimeout();
          h.waitValueISR(GPIO::HIGH);
          h2.waitValueISR(GPIO::LOW);
+         //h3.waitValueISR(GPIO::LOW);
          //waitValuePoll(gpio1, gpio2);
          //usleep(3125000);
 
@@ -105,6 +107,7 @@ int main()
          h2.startTimeout();
          h.waitValueISR(GPIO::LOW);
          h2.waitValueISR(GPIO::HIGH);
+         //h3.waitValueISR(GPIO::LOW);
          //waitValuePoll(gpio1, gpio2);
          //usleep(3125000);
       }

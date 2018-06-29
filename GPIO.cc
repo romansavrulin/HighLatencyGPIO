@@ -52,7 +52,7 @@ GPIO::GPIO(unsigned short id, Direction direction) :
    _id(id), _id_str(std::to_string(id)),
    _direction(direction),
    _edge(GPIO::NONE),
-   _isr(std::function<void(Value)>()), // default constructor constructs empty function object
+   _isr(isr_callback()), // default constructor constructs empty function object
    _pollThread(std::thread()),         // default constructor constructs non-joinable
    _pollFD(-1),
    _isrThread(std::thread()),          // default constructor constructs non-joinable
@@ -63,7 +63,7 @@ GPIO::GPIO(unsigned short id, Direction direction) :
 }
 
 
-GPIO::GPIO(unsigned short id, Edge edge, std::function<void(Value)> isr):
+GPIO::GPIO(unsigned short id, Edge edge, isr_callback isr):
    _id(id), _id_str(std::to_string(id)),
    _direction(GPIO::IN),
    _edge(edge),
@@ -105,6 +105,10 @@ GPIO::GPIO(unsigned short id, Edge edge, std::function<void(Value)> isr):
    pthread_setschedparam(_isrThread.native_handle(), SCHED_RR, &isr_sp);
    pthread_setschedparam(_pollThread.native_handle(), SCHED_RR, &poll_sp);
    sched_yield();
+}
+
+unsigned short GPIO::id() const{
+	return _id;
 }
 
 static std::fstream waitOpen(std::string fn, uint32_t timeout_ms, std::string user, std::string group){
@@ -441,7 +445,7 @@ void GPIO::isrLoop()
 #endif
 
       try{
-    	  _isr(val);
+    	  _isr(_id, val);
       }catch(...){
     	  cerr << "exception in user function";
       }

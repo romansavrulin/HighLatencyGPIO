@@ -82,6 +82,7 @@ public:
    };
 
 
+   typedef std::function<void(unsigned short, Value)> isr_callback;
    //-----------------------------------------------------------------------------------------------
    // FUNCTION NAME: GPIO (constructor)
    ///
@@ -114,7 +115,7 @@ public:
    explicit GPIO(
       unsigned short id,
       Edge edge,
-      std::function<void(Value)> isr);
+	  isr_callback isr);
 
 
    //-----------------------------------------------------------------------------------------------
@@ -150,6 +151,7 @@ public:
    //-----------------------------------------------------------------------------------------------
    Value getValue();
 
+   unsigned short id() const;
 
 protected:
    void initCommon();
@@ -173,7 +175,7 @@ protected:
    const Direction      _direction;
 
    const Edge _edge;
-   const std::function<void(Value)> _isr;
+   const isr_callback _isr;
 
    std::thread _pollThread;
    int _pollFD;

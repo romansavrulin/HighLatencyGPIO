@@ -51,9 +51,9 @@ const std::string GPIO::_sysfsPath("/sys/class/gpio/");
 
 
 GPIO::GPIO(unsigned short id) :
+   _usePollValue(false),
    _id(id), _id_str(std::to_string(id)),
-   _direction(Direction::OUT),
-   _edge(GPIO::NONE),
+   _type(Type::OUT),
    _isr(isr_callback()), // default constructor constructs empty function object
    _pollThread(std::thread()),         // default constructor constructs non-joinable
    _pollFD(-1),
@@ -65,52 +65,51 @@ GPIO::GPIO(unsigned short id) :
 }
 
 
-GPIO::GPIO(unsigned short id, Edge edge, isr_callback isr):
+GPIO::GPIO(unsigned short id, Type type, isr_callback isr, bool usePollValue):
+   _usePollValue(usePollValue),
    _id(id), _id_str(std::to_string(id)),
-   _direction(GPIO::IN),
-   _edge(edge),
+   _type(type),
    _isr(isr),
    _pollThread(std::thread()), // default constructor constructs non-joinable
    _pollFD(-1),
    _eventDispatcherThread(std::thread()),  // default constructor constructs non-joinable
    _destructing(false)
 {
-   initCommon();
+	initCommon();
 
-   //attempt to set edge detection
-   {
-      std::ofstream sysfs_edge(_sysfsPath + "gpio" + _id_str + "/edge", std::ofstream::app);
-      if( !sysfs_edge.is_open() )
-      {
-         throw std::runtime_error(
-            "Unable to set edge for GPIO " + _id_str + "." +
-            "Are you sure this GPIO can be configured for interrupts?");
-      }
-      if ( _edge == GPIO::NONE )
-    	  sysfs_edge << "none";
-      else {
-    	  sysfs_edge << "both";	//if there's an edge file, use both for value update.
-    	  sysfs_value.close();
-      }
-   }
+	std::ofstream sysfs_edge(_sysfsPath + "gpio" + _id_str + "/edge",
+			std::ofstream::app);
+	if (!sysfs_edge.is_open() || !isr) {
+		_usePollValue = true;
+		cerr << "Unable to use ISR, so use poll instead" << endl;
+	}
 
+	// It is valid to use the this pointer in the constructor in this case
+	// http://www.parashift.com/c++-faq/using-this-in-ctors.html
+	_eventDispatcherThread = std::thread(&GPIO::eventDispatcherLoop, this);
 
-   // It is valid to use the this pointer in the constructor in this case
-   // http://www.parashift.com/c++-faq/using-this-in-ctors.html
-   _eventDispatcherThread = std::thread(&GPIO::eventDispatcherLoop, this);
+	if (_usePollValue)
+		_pollThread = std::thread(&GPIO::pollValueLoop, this);
+	else {
+		//attempt to set edge detection
+		switch ( _type){
+		case Type::OUT:
+		case Type::IN:
+		  sysfs_edge << "none";
+		  break;
+		default:
+		  sysfs_edge << "both";	//if there's an edge file, use both for _value update.
+		  sysfs_value.close();  //if we use ISR edge detector, value file should be closed
+		}
+		_pollThread = std::thread(&GPIO::pollIsrLoop, this);
+	}
 
-   if(edge == GPIO::NONE)
-	   _pollThread = std::thread(&GPIO::pollValueLoop, this);
-   else{
-	   _pollThread = std::thread(&GPIO::pollIsrLoop, this);
-   }
-
-   // Trying to set high priority real time threads for better performance
-   struct sched_param isr_sp = { .sched_priority = 40 };
-   struct sched_param poll_sp = { .sched_priority = 10 };
-   pthread_setschedparam(_eventDispatcherThread.native_handle(), SCHED_RR, &isr_sp);
-   pthread_setschedparam(_pollThread.native_handle(), SCHED_RR, &poll_sp);
-   sched_yield();
+	// Trying to set high priority real time threads for better performance
+	struct sched_param isr_sp = {.sched_priority = 40};
+	struct sched_param poll_sp = {.sched_priority = 10};
+	pthread_setschedparam(_eventDispatcherThread.native_handle(), SCHED_RR, &isr_sp);
+	pthread_setschedparam(_pollThread.native_handle(), SCHED_RR, &poll_sp);
+	sched_yield();
 }
 
 unsigned short GPIO::id() const{
@@ -250,18 +249,6 @@ void GPIO::initCommon()
    _value_filename = _sysfsPath + "gpio" + _id_str + "/value";
    sysfs_value = waitOpen(_value_filename, _default_ownership_wait_timeout, _default_ownership_user, _default_ownership_group);
 
-   //attempt to set direction
-   {
-	  auto sysfs_direction = waitOpen(_sysfsPath + "gpio" + _id_str + "/direction", _default_ownership_wait_timeout, _default_ownership_user, _default_ownership_group);
-
-      if( !sysfs_direction.is_open() )
-      {
-         throw std::runtime_error("Unable to set direction for GPIO " + _id_str);
-      }
-      if( _direction == GPIO::IN )		    sysfs_direction << "in";
-      else if( _direction == GPIO::OUT )  	sysfs_direction << "out";
-   }
-
    //attempt to clear active low
    {
 	  auto sysfs_activelow =  waitOpen(_sysfsPath + "gpio" + _id_str + "/active_low", _default_ownership_wait_timeout, _default_ownership_user, _default_ownership_group);
@@ -272,22 +259,28 @@ void GPIO::initCommon()
       sysfs_activelow << "0";
    }
 
-   //if output, set value to inactive
+   //attempt to set direction
    {
-      if( _direction == GPIO::OUT )
+	  auto sysfs_direction = waitOpen(_sysfsPath + "gpio" + _id_str + "/direction", _default_ownership_wait_timeout, _default_ownership_user, _default_ownership_group);
+
+      if( !sysfs_direction.is_open() )
       {
-         if( !sysfs_value.is_open() )
-         {
-            throw std::runtime_error("Unable to initialize value for GPIO " + _id_str);
-         }
-         sysfs_value << "0";
+         throw std::runtime_error("Unable to set direction for GPIO " + _id_str);
       }
+      if( _type == Type::OUT ){
+    	  sysfs_direction << "out";
+    	  setValue(LOW);
+      }
+      else sysfs_direction << "in";
    }
+
+
+
 }
 
 void GPIO::pollValueLoop()
 {
-	cout << __FUNCTION__ << endl;
+	cout << __FUNCTION__ << " on " << _id << endl;
 	while( !_destructing )
 	{
 
@@ -526,7 +519,9 @@ GPIO::~GPIO()
 
 
 void GPIO::setValue(const Value value) {
-	if (_direction == GPIO::IN) {
+	std::unique_lock<std::mutex> l(_sysfsValueMutex);
+
+	if (_type != Type::OUT) {
 		throw std::runtime_error("Cannot set value on an input GPIO");
 	}
 
@@ -568,11 +563,7 @@ GPIO::Value GPIO::getValueFromSysfs() {
 
 GPIO::Value GPIO::getValue() {
 
-	if (_edge != GPIO::Edge::NONE) {
-		return _value; //for interrupt-triggered input get value from accumulator
-	}
-
-	if (_direction == GPIO::Direction::OUT)
+	if (_type != Type::IN && _type != Type::OUT )
 		return _value; //for output get value from accumulator //TODO: this can cause non-consistent read if any other process triggers value from outside
 
 	return getValueFromSysfs();

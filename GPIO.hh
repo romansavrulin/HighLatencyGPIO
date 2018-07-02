@@ -55,9 +55,12 @@ public:
    /// @enum Direction
    /// @brief Type used to configure a GPIO as an input or output
    //-----------------------------------------------------------------------------------------------
-   enum Direction {
+   enum Type {
+      OUT,
       IN,
-      OUT
+	  RISING,
+	  FALLING,
+	  BOTH
    };
 
    //-----------------------------------------------------------------------------------------------
@@ -69,22 +72,10 @@ public:
       HIGH
    };
 
-   //-----------------------------------------------------------------------------------------------
-   /// @enum Edge
-   /// @brief Type used to indicate which logic level transitions on an input GPIO should result in
-   ///        a call to the user-provided callback function.
-   //-----------------------------------------------------------------------------------------------
-   enum Edge {
-      NONE,
-      RISING,
-      FALLING,
-      BOTH
-   };
-
 
    typedef std::function<void(unsigned short, Value)> isr_callback;
    //-----------------------------------------------------------------------------------------------
-   // FUNCTION NAME: GPIO (constructor)
+   // FUNCTION NAME: Output GPIO (constructor)
    ///
    /// @brief Construt an output GPIO object.
    ///
@@ -102,18 +93,19 @@ public:
    ///        transition of type edge occurs.
    ///
    ///
-   /// @param[in]   id    The GPIO ID. Often referred to as "pin number".
-   /// @param[in]   edge  The type (INPUT or OUTPUT) of GPIO to construct.
-   /// @param[in]   isr   The function to call when transitions of type edge occur.
+   /// @param[in]   id            The GPIO ID. Often referred to as "pin number".
+   /// @param[in]   type          The type of GPIO to construct.
+   /// @param[in]   isr           The function to call when transitions of type RISING, FALLING or BOTH occurs. can be null.
+   /// @param[in]   usePollValue  On some platforms ISR detector is doing bananas, so utilize pollValue routine instead
    ///
-   /// @note If function isr throws an exception, IT WILL NOT BE HANDLED OR IGNORED BY THIS CLASS.
-   ///       Therefore, it is recommended to make this function noexcept.
+   /// @note If function isr throws an exception, IT WILL BE CONSUMED BY THIS CLASS.
    ///
    //-----------------------------------------------------------------------------------------------
    explicit GPIO(
       unsigned short id,
-      Edge edge,
-	  isr_callback isr);
+      Type type,
+	  isr_callback isr,
+	  bool usePollValue = true);
 
 
    //-----------------------------------------------------------------------------------------------
@@ -168,14 +160,14 @@ protected:
    std::fstream sysfs_value;
 
    Value _value;
+   bool  _usePollValue;
 
    static const std::string  _sysfsPath;
 
    const unsigned short _id;
    const std::string    _id_str;
-   const Direction      _direction;
+   const Type      _type;
 
-   const Edge _edge;
    const isr_callback _isr;
 
    std::thread _pollThread;

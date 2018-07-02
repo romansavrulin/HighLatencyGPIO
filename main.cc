@@ -13,7 +13,7 @@ using namespace std;
 class Handler
 {
 public:
-	Handler(int id):_g(id, GPIO::Edge::NONE, std::bind(&Handler::handle, this, std::placeholders::_1, std::placeholders::_2)){
+	Handler(int id):_g(id, GPIO::Type::BOTH, std::bind(&Handler::handle, this, std::placeholders::_1, std::placeholders::_2)){
 		_accum = std::chrono::duration<double, std::micro>(0.0);
 		_value = _g.getValue();
 	}

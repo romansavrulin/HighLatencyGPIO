@@ -186,7 +186,7 @@ protected:
    std::atomic<bool> _destructing;
    int               _pipeFD[2];
 
-   static constexpr int _default_ownership_wait_timeout = 500;
+   static constexpr int _default_ownership_wait_timeout = 5000;
    static constexpr const char* _default_ownership_user = "root";
    static constexpr const char* _default_ownership_group = "gpio";
 

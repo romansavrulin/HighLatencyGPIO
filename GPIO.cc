@@ -163,7 +163,7 @@ static std::fstream waitOpen(std::string fn, uint32_t timeout_ms, std::string us
 			}
 		}
 
-		usleep(1000);
+		usleep(1000);  // do not change without recalculating timeout_ms
 	}while(timeout_ms--);
 
 	if(!groupMatch || !userMatch)
@@ -294,7 +294,7 @@ void GPIO::pollValueLoop()
 		auto newValue = getValueFromSysfs();
 
 #ifndef LOCKFREE
-		usleep(10000);
+		usleep(5000);
 #endif
 		if(newValue != _value){
 			_value = newValue;

@@ -46,6 +46,15 @@ public:
    		cout << "WaitValueISR " << _g.id() << " Got: " << v << endl;
    }
 
+   void showValue(GPIO &g1){
+		//return ;
+		//auto v1 = GPIO::Value::LOW;
+		auto v1 = g1.getValue();
+		auto v2 = _g.getValue();
+		 //if (v1 != v2)
+			 cout << "Set " << v1 << "; Read " << v2 << endl;
+   }
+
 protected:
    GPIO _g;
    high_resolution_clock::time_point _beg;
@@ -54,24 +63,26 @@ protected:
    volatile int _value = -1;
 };
 
-void waitValuePoll(GPIO &g1, GPIO &g2){ //TODO: implement
-	//return ;
-	//auto v1 = GPIO::Value::LOW;
-	auto v1 = g1.getValue();
-	auto v2 = g2.getValue();
-	 //if (v1 != v2)
-		 cout << "Set " << v1 << "; Read " << v2 << endl;
-}
-
 int main()
 {
 
    {
       // Short GPIO 15 (input) to GPIO 27 (output) for the following latency test
       GPIO gpio1(395);
-      Handler h(391);
-      Handler h2(396);
-      Handler h3(397);
+      GPIO gpio2(401);
+      Handler h1(384);
+      Handler h2(385);
+      Handler h3(386);
+      Handler h4(387);
+      Handler h5(388);
+      Handler h6(389);
+      Handler h7(390);
+      Handler h8(391);
+      Handler h9(392);
+      Handler h10(393);
+      Handler h11(394);
+      Handler h12(396);
+      Handler h13(397);
 
       usleep(125000);
 
@@ -94,31 +105,32 @@ int main()
       const unsigned int nIterations = 50000;
       for(unsigned int i=0;i<nIterations;++i)
       {
-    	  usleep(1000);
     	  cout << "High" << endl;
 
          gpio1.setValue(GPIO::HIGH);
+         gpio2.setValue(GPIO::HIGH);
 
-         h.startTimeout();
-         h2.startTimeout();
-         h.waitValueISR(GPIO::HIGH);
-         h2.waitValueISR(GPIO::LOW);
-         //h3.waitValueISR(GPIO::LOW);
-         //waitValuePoll(gpio1, gpio2);
-         //usleep(3125000);
-         usleep(10000);
+         h12.startTimeout();
+         h8.startTimeout();
+         h12.waitValueISR(GPIO::LOW);
+         h8.waitValueISR(GPIO::HIGH);
+
+         h12.showValue(gpio1);
+         h8.showValue(gpio1);
 
          cout << "Low" << endl;
 
          gpio1.setValue(GPIO::LOW);
+         gpio2.setValue(GPIO::LOW);
 
-         h.startTimeout();
-         h2.startTimeout();
-         h.waitValueISR(GPIO::LOW);
-         h2.waitValueISR(GPIO::HIGH);
-         //h3.waitValueISR(GPIO::LOW);
-         //waitValuePoll(gpio1, gpio2);
-         //usleep(3125000);
+         h8.startTimeout();
+         h12.startTimeout();
+         h8.waitValueISR(GPIO::LOW);
+         h12.waitValueISR(GPIO::HIGH);
+
+         h12.showValue(gpio1);
+         h8.showValue(gpio1);
+
       }
 
       //std::cout << "Average: " << _accum.count()/nIterations << " microseconds " << std::endl;

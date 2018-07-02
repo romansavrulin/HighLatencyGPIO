@@ -13,9 +13,9 @@ using namespace std;
 class Handler
 {
 public:
-	Handler(int id):_g(id, GPIO::Edge::BOTH, std::bind(&Handler::handle, this, std::placeholders::_1, std::placeholders::_2)){
-		_value = _g.getValue();
+	Handler(int id):_g(id, GPIO::Edge::NONE, std::bind(&Handler::handle, this, std::placeholders::_1, std::placeholders::_2)){
 		_accum = std::chrono::duration<double, std::micro>(0.0);
+		_value = _g.getValue();
 	}
    void handle(unsigned short id, GPIO::Value val)
    {
@@ -51,7 +51,7 @@ protected:
    high_resolution_clock::time_point _beg;
    duration<double, std::micro> _accum;
 
-   volatile int _value = GPIO::LOW;
+   volatile int _value = -1;
 };
 
 void waitValuePoll(GPIO &g1, GPIO &g2){ //TODO: implement
@@ -68,7 +68,7 @@ int main()
 
    {
       // Short GPIO 15 (input) to GPIO 27 (output) for the following latency test
-      GPIO gpio1(395, GPIO::Direction::OUT);
+      GPIO gpio1(395);
       Handler h(391);
       Handler h2(396);
       Handler h3(397);
@@ -84,9 +84,17 @@ int main()
 
       cout << "Main Cycle" << endl;
 
+      /*try {
+    	  throw std::runtime_error("hello there!");
+      }catch(...){
+
+    	  cout << "Handled1 " << endl;
+      }*/
+
       const unsigned int nIterations = 50000;
       for(unsigned int i=0;i<nIterations;++i)
       {
+    	  usleep(1000);
     	  cout << "High" << endl;
 
          gpio1.setValue(GPIO::HIGH);
@@ -94,10 +102,11 @@ int main()
          h.startTimeout();
          h2.startTimeout();
          h.waitValueISR(GPIO::HIGH);
-         //h2.waitValueISR(GPIO::LOW);
+         h2.waitValueISR(GPIO::LOW);
          //h3.waitValueISR(GPIO::LOW);
          //waitValuePoll(gpio1, gpio2);
          //usleep(3125000);
+         usleep(10000);
 
          cout << "Low" << endl;
 

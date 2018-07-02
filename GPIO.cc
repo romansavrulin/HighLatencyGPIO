@@ -43,19 +43,21 @@ SOFTWARE.
 using std::cerr;
 using std::endl;
 
+using std::cout;
+
 
 
 const std::string GPIO::_sysfsPath("/sys/class/gpio/");
 
 
-GPIO::GPIO(unsigned short id, Direction direction) :
+GPIO::GPIO(unsigned short id) :
    _id(id), _id_str(std::to_string(id)),
-   _direction(direction),
+   _direction(Direction::OUT),
    _edge(GPIO::NONE),
    _isr(isr_callback()), // default constructor constructs empty function object
    _pollThread(std::thread()),         // default constructor constructs non-joinable
    _pollFD(-1),
-   _isrThread(std::thread()),          // default constructor constructs non-joinable
+   _eventDispatcherThread(std::thread()),          // default constructor constructs non-joinable
    _destructing(false)
 
 {
@@ -70,7 +72,7 @@ GPIO::GPIO(unsigned short id, Edge edge, isr_callback isr):
    _isr(isr),
    _pollThread(std::thread()), // default constructor constructs non-joinable
    _pollFD(-1),
-   _isrThread(std::thread()),  // default constructor constructs non-joinable
+   _eventDispatcherThread(std::thread()),  // default constructor constructs non-joinable
    _destructing(false)
 {
    initCommon();
@@ -84,25 +86,29 @@ GPIO::GPIO(unsigned short id, Edge edge, isr_callback isr):
             "Unable to set edge for GPIO " + _id_str + "." +
             "Are you sure this GPIO can be configured for interrupts?");
       }
-      if     ( _edge == GPIO::NONE )    sysfs_edge << "none";
+      if ( _edge == GPIO::NONE )
+    	  sysfs_edge << "none";
       else {
     	  sysfs_edge << "both";	//if there's an edge file, use both for value update.
     	  sysfs_value.close();
       }
-      sysfs_edge.close();
    }
 
 
    // It is valid to use the this pointer in the constructor in this case
    // http://www.parashift.com/c++-faq/using-this-in-ctors.html
-   _isrThread = std::thread(&GPIO::isrLoop, this);
+   _eventDispatcherThread = std::thread(&GPIO::eventDispatcherLoop, this);
 
-   _pollThread = std::thread(&GPIO::pollLoop, this);
+   if(edge == GPIO::NONE)
+	   _pollThread = std::thread(&GPIO::pollValueLoop, this);
+   else{
+	   _pollThread = std::thread(&GPIO::pollIsrLoop, this);
+   }
 
    // Trying to set high priority real time threads for better performance
    struct sched_param isr_sp = { .sched_priority = 40 };
    struct sched_param poll_sp = { .sched_priority = 10 };
-   pthread_setschedparam(_isrThread.native_handle(), SCHED_RR, &isr_sp);
+   pthread_setschedparam(_eventDispatcherThread.native_handle(), SCHED_RR, &isr_sp);
    pthread_setschedparam(_pollThread.native_handle(), SCHED_RR, &poll_sp);
    sched_yield();
 }
@@ -164,6 +170,15 @@ static std::fstream waitOpen(std::string fn, uint32_t timeout_ms, std::string us
 		throw std::runtime_error("timeout waiting for ownership " + user + ":" + group + " on " + fn + " file\n");
 
 	throw std::runtime_error("Timeout opening " + fn + " file\n");
+}
+
+GPIO::Value GPIO::charToValue(char c){
+	if     ( c == '0' )
+		return GPIO::LOW;
+	else if( c == '1' )
+		return GPIO::HIGH;
+
+	throw std::runtime_error("Invalid value read from GPIO " + _id_str + ": " + c);
 }
 
 
@@ -230,20 +245,14 @@ void GPIO::initCommon()
          throw std::runtime_error("Unable to export GPIO " + _id_str);
       }
       sysfs_export << _id_str;
-      sysfs_export.close();
    }
-
-   sysfs_direction = waitOpen(_sysfsPath + "gpio" + _id_str + "/direction", _default_ownership_wait_timeout, _default_ownership_user, _default_ownership_group);
 
    _value_filename = _sysfsPath + "gpio" + _id_str + "/value";
    sysfs_value = waitOpen(_value_filename, _default_ownership_wait_timeout, _default_ownership_user, _default_ownership_group);
 
-
-   sysfs_activelow =  waitOpen(_sysfsPath + "gpio" + _id_str + "/active_low", _default_ownership_wait_timeout, _default_ownership_user, _default_ownership_group);
-
-
    //attempt to set direction
    {
+	  auto sysfs_direction = waitOpen(_sysfsPath + "gpio" + _id_str + "/direction", _default_ownership_wait_timeout, _default_ownership_user, _default_ownership_group);
 
       if( !sysfs_direction.is_open() )
       {
@@ -251,22 +260,17 @@ void GPIO::initCommon()
       }
       if( _direction == GPIO::IN )		    sysfs_direction << "in";
       else if( _direction == GPIO::OUT )  	sysfs_direction << "out";
-      sysfs_direction.close();
    }
-
-
 
    //attempt to clear active low
    {
+	  auto sysfs_activelow =  waitOpen(_sysfsPath + "gpio" + _id_str + "/active_low", _default_ownership_wait_timeout, _default_ownership_user, _default_ownership_group);
       if( !sysfs_activelow.is_open() )
       {
          throw std::runtime_error("Unable to clear active_low for GPIO " + _id_str);
       }
       sysfs_activelow << "0";
-      sysfs_activelow.close();
    }
-
-
 
    //if output, set value to inactive
    {
@@ -281,9 +285,37 @@ void GPIO::initCommon()
    }
 }
 
-
-void GPIO::pollLoop()
+void GPIO::pollValueLoop()
 {
+	cout << __FUNCTION__ << endl;
+	while( !_destructing )
+	{
+
+		auto newValue = getValueFromSysfs();
+
+#ifndef LOCKFREE
+		usleep(10000);
+#endif
+		if(newValue != _value){
+			_value = newValue;
+			#ifdef LOCKFREE
+			while( !_spsc_queue.push(_value) )
+			;
+			#else
+			{
+				std::lock_guard<std::mutex> lck(_eventMutex);
+				_eventQueue.push(_value);
+				_eventCV.notify_one();
+			}
+			#endif
+		}
+	}
+}
+
+void GPIO::pollIsrLoop()
+{
+
+	cout << __FUNCTION__ << endl;
    // No easy way to get file descriptor from ifstream... ugh.
    {
       const std::string path(_value_filename);
@@ -341,9 +373,7 @@ void GPIO::pollLoop()
          if( nbytes < 0 ) perror("read1");
 			 throw std::runtime_error("GPIO " + _id_str + " read1() badness...");
 
-         if     ( buf[0] == '0' )   _value = GPIO::LOW;
-         else if( buf[0] == '1' )   _value = GPIO::HIGH;
-         else throw std::runtime_error("GPIO " + _id_str + " read1() invalid value...");
+		_value = GPIO::charToValue(buf[0]);
       }
    }
 
@@ -368,12 +398,10 @@ void GPIO::pollLoop()
 
             std::cout << "Poll Read " << buf[0] << " on " << _id << endl;
 
-            if     ( buf[0] == '0' )   _value = GPIO::LOW;
-            else if( buf[0] == '1' )   _value = GPIO::HIGH;
-            else throw std::runtime_error("Invalid value read from GPIO " + _id_str + ": " + buf[0]);
+            _value = GPIO::charToValue(buf[0]);
 
    #ifdef LOCKFREE
-            while( !_spsc_queue.push(val) )
+            while( !_spsc_queue.push(_value) )
                ;
    #else
             {
@@ -406,7 +434,7 @@ void GPIO::pollLoop()
 }
 
 // Process interrupt events serially
-void GPIO::isrLoop()
+void GPIO::eventDispatcherLoop()
 {
    Value val;
 
@@ -466,7 +494,7 @@ GPIO::~GPIO()
    close(_pipeFD[0]);
    close(_pipeFD[1]);
 
-   if( _isrThread.joinable() )   _isrThread.join();
+   if( _eventDispatcherThread.joinable() )   _eventDispatcherThread.join();
    if( _pollThread.joinable() )  _pollThread.join();
 
    // Do not close the file descriptor for the sysfs value file until _pollThread() has joined.
@@ -481,7 +509,6 @@ GPIO::~GPIO()
       if( sysfs_unexport.is_open() )
       {
          sysfs_unexport << _id_str;
-         sysfs_unexport.close();
       }
       else // Do not throw exception in destructor! Effective C++ Item 8.
       {
@@ -498,55 +525,55 @@ GPIO::~GPIO()
 }
 
 
-void GPIO::setValue(const Value value)
-{
-   if( _direction == GPIO::IN )
-   {
-      throw std::runtime_error("Cannot set value on an input GPIO");
-   }
+void GPIO::setValue(const Value value) {
+	if (_direction == GPIO::IN) {
+		throw std::runtime_error("Cannot set value on an input GPIO");
+	}
 
-   if( !sysfs_value.is_open() )
-   {
-      throw std::runtime_error("Unable to set value for GPIO " + _id_str);
-   }
+	if (!sysfs_value.is_open()) {
+		throw std::runtime_error("Unable to set value for GPIO " + _id_str);
+	}
 
+	sysfs_value.seekg(0);
 
-   sysfs_value.seekg(0);
-
-   if     ( value == GPIO::HIGH )  sysfs_value << "1" << std::endl;
-   else if( value == GPIO::LOW )   sysfs_value << "0" << std::endl;
-   sysfs_value.sync();
-   _value = value;
+	if (value == GPIO::HIGH)
+		sysfs_value << "1" << std::endl;
+	else if (value == GPIO::LOW)
+		sysfs_value << "0" << std::endl;
+	sysfs_value.sync();
+	_value = value;
 }
 
+GPIO::Value GPIO::getValueFromSysfs() {
 
-GPIO::Value GPIO::getValue()
-{
-	if(_edge != GPIO::Edge::NONE){
+	std::unique_lock<std::mutex> l(_sysfsValueMutex);
+
+	//for in and non-interrupt triggered read sysfs
+	if (!sysfs_value.is_open()) {
+		throw std::runtime_error("sysfs Value file is not open for GPIO " + _id_str);
+	}
+
+	sysfs_value.seekg(0);
+
+	const char value = sysfs_value.get();
+	if (sysfs_value.fail() || sysfs_value.bad()) {
+		throw std::runtime_error(
+				"Unable to get good value for GPIO " + _id_str + " RDState bad: "
+						+ std::to_string(sysfs_value.bad()) + " fail: "
+						+ std::to_string(sysfs_value.fail()));
+	}
+
+	return GPIO::charToValue(value);
+}
+
+GPIO::Value GPIO::getValue() {
+
+	if (_edge != GPIO::Edge::NONE) {
 		return _value; //for interrupt-triggered input get value from accumulator
 	}
 
-	if(_direction == GPIO::Direction::OUT)
+	if (_direction == GPIO::Direction::OUT)
 		return _value; //for output get value from accumulator //TODO: this can cause non-consistent read if any other process triggers value from outside
 
-	//for in and non-interrupt triggered read sysfs
-   if( !sysfs_value.is_open() )
-   {
-      throw std::runtime_error("Unable to get value for GPIO " + _id_str);
-   }
-
-   sysfs_value.seekg(0);
-
-   const char value = sysfs_value.get();
-   if( sysfs_value.fail() || sysfs_value.bad() )
-   {
-      throw std::runtime_error("Unable to get good value for GPIO " + _id_str + " RDState bad: " + std::to_string(sysfs_value.bad()) + " fail: " + std::to_string(sysfs_value.fail()));
-   }
-
-   if     ( value == '0' )
-	   return GPIO::LOW;
-   else if( value == '1' )
-	   return GPIO::HIGH;
-
-   throw std::runtime_error("Invalid value read from GPIO " + _id_str + ": " + value);
+	return getValueFromSysfs();
 }

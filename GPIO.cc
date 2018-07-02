@@ -84,8 +84,9 @@ GPIO::GPIO(unsigned short id, Type type, isr_callback isr, bool usePollValue):
 		cerr << "Unable to use ISR, so use poll instead" << endl;
 	}
 
-	// It is valid to use the this pointer in the constructor in this case
-	// http://www.parashift.com/c++-faq/using-this-in-ctors.html
+	if(_type ==  Type::OUT || _type == Type::IN)
+		return; //out and in do not use internal threads
+
 	_eventDispatcherThread = std::thread(&GPIO::eventDispatcherLoop, this);
 
 	if (_usePollValue)
@@ -291,6 +292,13 @@ void GPIO::pollValueLoop()
 #endif
 		if(newValue != _value){
 			_value = newValue;
+
+			if(_type == Type::RISING && _value == Value::LOW)
+				continue;
+
+			if(_type == Type::FALLING && _value == Value::HIGH)
+				continue;
+
 			#ifdef LOCKFREE
 			while( !_spsc_queue.push(_value) )
 			;
@@ -392,6 +400,12 @@ void GPIO::pollIsrLoop()
             std::cout << "Poll Read " << buf[0] << " on " << _id << endl;
 
             _value = GPIO::charToValue(buf[0]);
+
+			if(_type == Type::RISING && _value == Value::LOW)
+				continue;
+
+			if(_type == Type::FALLING && _value == Value::HIGH)
+				continue;
 
    #ifdef LOCKFREE
             while( !_spsc_queue.push(_value) )
@@ -522,7 +536,7 @@ void GPIO::setValue(const Value value) {
 	std::unique_lock<std::mutex> l(_sysfsValueMutex);
 
 	if (_type != Type::OUT) {
-		throw std::runtime_error("Cannot set value on an input GPIO");
+		throw std::runtime_error("Type " + std::to_string(_type) + "is invalid for " + __FUNCTION__ + " on GPIO " + _id_str);
 	}
 
 	if (!sysfs_value.is_open()) {

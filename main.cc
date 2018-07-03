@@ -103,7 +103,8 @@ int main()
       }*/
 
       const unsigned int nIterations = 50000;
-      for(unsigned int i=0;i<nIterations;++i)
+      //for(unsigned int i=0;i<nIterations;++i)
+      while(1)
       {
     	  cout << "High" << endl;
 
@@ -117,8 +118,10 @@ int main()
 
          h12.showValue(gpio1);
          h8.showValue(gpio1);
+         //usleep(15000);
 
          cout << "Low" << endl;
+
 
          gpio1.setValue(GPIO::LOW);
          gpio2.setValue(GPIO::LOW);
@@ -130,6 +133,8 @@ int main()
 
          h12.showValue(gpio1);
          h8.showValue(gpio1);
+
+         //usleep(40000);
 
       }
 

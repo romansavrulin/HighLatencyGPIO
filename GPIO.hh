@@ -32,6 +32,7 @@ SOFTWARE.
 #include <string>
 #include <thread>
 #include <fstream>
+#include <memory>
 
 // LOCKFREE define specifies the use of a (single producer, single consumer) lockfree container for
 // the transfer of transition events from the thread which detects these events, to the thread which
@@ -50,6 +51,9 @@ SOFTWARE.
 class GPIO : private Uncopyable
 {
 public:
+
+
+	typedef std::shared_ptr<GPIO> sPtr;
 
    //-----------------------------------------------------------------------------------------------
    /// @enum Direction

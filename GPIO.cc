@@ -248,7 +248,6 @@ void GPIO::initCommon()
    }
 
    _value_filename = _sysfsPath + "gpio" + _id_str + "/value";
-   sysfs_value = waitOpen(_value_filename, _default_ownership_wait_timeout, _default_ownership_user, _default_ownership_group);
 
    //attempt to clear active low
    {
@@ -270,13 +269,15 @@ void GPIO::initCommon()
       }
       if( _type == Type::OUT ){
     	  sysfs_direction << "out";
-    	  setValue(LOW);
       }
       else sysfs_direction << "in";
    }
 
+   sysfs_value = waitOpen(_value_filename, _default_ownership_wait_timeout, _default_ownership_user, _default_ownership_group);
 
-
+   if( _type == Type::OUT ){
+	   setValue(Value::LOW);
+   }
 }
 
 void GPIO::pollValueLoop()
@@ -545,11 +546,22 @@ void GPIO::setValue(const Value value) {
 
 	sysfs_value.seekg(0);
 
+	//cout << "setting " << value << "on" << _id;
+
 	if (value == GPIO::HIGH)
 		sysfs_value << "1" << std::endl;
 	else if (value == GPIO::LOW)
 		sysfs_value << "0" << std::endl;
+
 	sysfs_value.sync();
+
+	if (sysfs_value.fail() || sysfs_value.bad()) {
+		throw std::runtime_error(
+				"Unable to set good value for GPIO " + _id_str + " RDState bad: "
+						+ std::to_string(sysfs_value.bad()) + " fail: "
+						+ std::to_string(sysfs_value.fail()));
+	}
+
 	_value = value;
 }
 

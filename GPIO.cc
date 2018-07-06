@@ -121,7 +121,9 @@ static std::fstream waitOpen(std::string fn, uint32_t timeout_ms, std::string us
 	struct stat sb;
 
 	bool userMatch = false,
-		 groupMatch = false;
+		 userLogMsg = false,
+		 groupMatch = false,
+		 groupLogMsg = false;
 
 	do{
 
@@ -135,8 +137,10 @@ static std::fstream waitOpen(std::string fn, uint32_t timeout_ms, std::string us
 				if(user == std::string(pw->pw_name)){
 					userMatch = true;
 					printf("User: %s appeared on %s\n", user.c_str(), fn.c_str());
-				}else
+				}else if (!userLogMsg){
+					groupLogMsg = true;
 					printf("Waiting User: %s on %s . now %s\n", user.c_str(), fn.c_str(), pw->pw_name);
+				}
 			}
 		}else
 			userMatch = true;
@@ -149,8 +153,10 @@ static std::fstream waitOpen(std::string fn, uint32_t timeout_ms, std::string us
 				if(group == std::string(gr->gr_name)){
 					groupMatch = true;
 					printf("Group: %s appeared on %s\n", group.c_str(), fn.c_str());
-				}else
+				}else if(!groupLogMsg){
 					printf("Waiting Group: %s on %s . now %s\n", group.c_str(), fn.c_str(), gr->gr_name);
+					groupLogMsg = true;
+				}
 			}
 		}else
 			groupMatch = true;
